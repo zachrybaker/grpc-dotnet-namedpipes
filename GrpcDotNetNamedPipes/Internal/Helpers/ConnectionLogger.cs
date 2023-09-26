@@ -14,32 +14,70 @@
  * limitations under the License.
  */
 
-namespace GrpcDotNetNamedPipes.Internal.Helpers;
+using Microsoft.Extensions.Logging;
 
-internal class ConnectionLogger
+namespace GrpcDotNetNamedPipes.Internal.Helpers
 {
-    private static int _lastId;
-
-    private static int NextId() => Interlocked.Increment(ref _lastId);
-    public static ConnectionLogger Client(Action<string> log) => new(log, "CLIENT", log != null ? NextId() : 0);
-    public static ConnectionLogger Server(Action<string> log) => new(log, "SERVER", 0);
-
-    private readonly Action<string> _log;
-    private readonly string _type;
-
-    private ConnectionLogger(Action<string> log, string type, int id)
+    internal abstract class ConnectionLogger<T> 
+        where T : class
     {
-        _log = log;
-        _type = type;
-        ConnectionId = id;
+        private static int _lastId;
+        public int ConnectionId { get; set; }
+
+        public static int NextId() => Interlocked.Increment(ref _lastId);
+        protected readonly ILogger<T> _logger;
+        protected ConnectionLogger(ILogger<T> logger,  int id)
+        {
+            _logger = logger;
+            ConnectionId = id;
+        }
+        public static ServerLogger<T> Server() 
+            => new ServerLogger<T>(NamedPipeServer.LoggerFactory?.CreateLogger<T>() ?? null, 0);
+        public static ClientLogger<T> Client() 
+            => new ClientLogger<T>(
+                NamedPipeChannel.LoggerFactory?.CreateLogger<T>() ?? null, 
+                NamedPipeChannel.LoggerFactory != null ? NextId() : 0);
+
+        public static ConnectionLogger<T> Logger(TransportSide transportSide) => 
+            transportSide == TransportSide.Server ? 
+            Server() : 
+            Client();
+
+         public abstract void Trace(string message);
+         public abstract void Error(string message);
     }
 
-    public int ConnectionId { get; set; }
-
-    public void Log(string message)
+    internal class ServerLogger<T>  : ConnectionLogger<T> where T : class
     {
-        if (_log == null) return;
-        var id = ConnectionId > 0 ? ConnectionId.ToString() : "?";
-        _log($"[{_type}][{id}] {message}");
+        public ServerLogger(ILogger<T> logger,  int id) : base(logger, id)
+        {
+        }
+
+        public override void Trace(string message)
+            => _logger?.LogTrace(string.Format("[SERVER][{0}] {1}", 
+                ConnectionId > 0 ? ConnectionId.ToString() : "?",
+                message));
+
+        public override void Error(string message)
+            => _logger?.LogError(string.Format("[SERVER][{0}] {1}", 
+                ConnectionId > 0 ? ConnectionId.ToString() : "?",
+                message));
+    }
+
+    internal class ClientLogger<T> : ConnectionLogger<T> where T : class
+    {
+        public ClientLogger(ILogger<T> logger,  int id) : base(logger, id)
+        {
+        }
+
+        public override void Trace(string message)
+            => _logger?.LogTrace(string.Format("[CLIENT][{0}] {1}", 
+                ConnectionId > 0 ? ConnectionId.ToString() : "?",
+                message));
+
+        public override void Error(string message)
+            => _logger?.LogError(string.Format("[CLIENT][{0}] {1}", 
+                ConnectionId > 0 ? ConnectionId.ToString() : "?",
+                message));
     }
 }

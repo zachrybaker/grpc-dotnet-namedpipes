@@ -14,29 +14,33 @@
  * limitations under the License.
  */
 
+using Microsoft.Extensions.Logging;
+
 namespace GrpcDotNetNamedPipes;
 
 public class NamedPipeServer : IDisposable
 {
     private readonly ServerStreamPool _pool;
-    private readonly Action<string> _log;
     private readonly Dictionary<string, Func<ServerConnectionContext, Task>> _methodHandlers = new();
-
+    
+    public static ILoggerFactory LoggerFactory {  get; private set; }
+    
     public NamedPipeServer(string pipeName)
         : this(pipeName, new NamedPipeServerOptions())
     {
     }
 
     public NamedPipeServer(string pipeName, NamedPipeServerOptions options)
-        : this(pipeName, options, null)
-    {
+    { 
+        _pool = new ServerStreamPool(pipeName, options, HandleConnection, InvokeError);
+        ServiceBinder = new ServiceBinderImpl(this);
     }
 
-    internal NamedPipeServer(string pipeName, NamedPipeServerOptions options, Action<string> log)
+    public static NamedPipeServer Server(string pipeName, NamedPipeServerOptions options,
+        ILoggerFactory loggerFactory)
     {
-        _pool = new ServerStreamPool(pipeName, options, HandleConnection, InvokeError);
-        _log = log;
-        ServiceBinder = new ServiceBinderImpl(this);
+        LoggerFactory = loggerFactory;
+        return new NamedPipeServer(pipeName, options);
     }
 
     public ServiceBinderBase ServiceBinder { get; }
@@ -65,9 +69,9 @@ public class NamedPipeServer : IDisposable
 
     private async Task HandleConnection(NamedPipeServerStream pipeStream)
     {
-        var logger = ConnectionLogger.Server(_log);
-        var ctx = new ServerConnectionContext(pipeStream, logger, _methodHandlers);
-        await Task.Run(new PipeReader(pipeStream, ctx, logger, ctx.Dispose, InvokeError).ReadLoop);
+        var ctx = new ServerConnectionContext(pipeStream, _methodHandlers);
+        await Task.Run(
+            new PipeReader(pipeStream, ctx, ctx.Dispose,  TransportSide.Server, InvokeError).ReadLoop);
     }
 
     private class ServiceBinderImpl : ServiceBinderBase

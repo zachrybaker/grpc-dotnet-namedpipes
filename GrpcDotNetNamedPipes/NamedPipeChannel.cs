@@ -14,6 +14,8 @@
  * limitations under the License.
  */
 
+using Microsoft.Extensions.Logging;
+
 namespace GrpcDotNetNamedPipes;
 
 public class NamedPipeChannel : CallInvoker
@@ -21,7 +23,7 @@ public class NamedPipeChannel : CallInvoker
     private readonly string _serverName;
     private readonly string _pipeName;
     private readonly NamedPipeChannelOptions _options;
-    private readonly Action<string> _log;
+    public static ILoggerFactory LoggerFactory {  get; private set; }
 
     public NamedPipeChannel(string serverName, string pipeName)
         : this(serverName, pipeName, new NamedPipeChannelOptions())
@@ -29,18 +31,17 @@ public class NamedPipeChannel : CallInvoker
     }
 
     public NamedPipeChannel(string serverName, string pipeName, NamedPipeChannelOptions options)
-        : this(serverName, pipeName, options, null)
-    {
-    }
-
-    internal NamedPipeChannel(string serverName, string pipeName, NamedPipeChannelOptions options, Action<string> log)
     {
         _serverName = serverName;
         _pipeName = pipeName;
         _options = options;
-        _log = log;
     }
-
+    public static NamedPipeChannel Client(string serverName, string pipeName, NamedPipeChannelOptions options, ILoggerFactory loggerFactory)
+    {
+        
+        LoggerFactory = loggerFactory;
+        return new NamedPipeChannel(serverName, pipeName, options);
+    }
     internal Action<NamedPipeClientStream> PipeCallback { get; set; }
 
     private ClientConnectionContext CreateConnectionContext<TRequest, TResponse>(
@@ -62,11 +63,9 @@ public class NamedPipeChannel : CallInvoker
         try
         {
             bool isServerUnary = method.Type == MethodType.Unary || method.Type == MethodType.ClientStreaming;
-            var logger = ConnectionLogger.Client(_log);
-            var ctx = new ClientConnectionContext(stream, callOptions, isServerUnary, _options.ConnectionTimeout,
-                logger);
+            var ctx = new ClientConnectionContext(stream, callOptions, isServerUnary, _options.ConnectionTimeout);
             ctx.InitCall(method, request);
-            Task.Run(new PipeReader(stream, ctx, logger, ctx.Dispose).ReadLoop);
+            Task.Run(new PipeReader(stream, ctx, ctx.Dispose, TransportSide.Client).ReadLoop);
             return ctx;
         }
         catch (Exception ex)

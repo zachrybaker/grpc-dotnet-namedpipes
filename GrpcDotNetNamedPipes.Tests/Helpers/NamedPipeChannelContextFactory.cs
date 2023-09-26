@@ -24,7 +24,7 @@ public class NamedPipeChannelContextFactory : ChannelContextFactory
     public ChannelContext Create(NamedPipeServerOptions options, ITestOutputHelper output)
     {
         var impl = new TestServiceImpl();
-        var server = new NamedPipeServer(_pipeName, options, output != null ? output.WriteLine : null);
+        var server = new NamedPipeServer(_pipeName, options);
         TestService.BindService(server.ServiceBinder, impl);
         server.Start();
         return new ChannelContext
@@ -43,8 +43,7 @@ public class NamedPipeChannelContextFactory : ChannelContextFactory
     public override TestService.TestServiceClient CreateClient(ITestOutputHelper output = null)
     {
         var channel = new NamedPipeChannel(".", _pipeName,
-            new NamedPipeChannelOptions { ConnectionTimeout = _connectionTimeout },
-            output != null ? output.WriteLine : null);
+            new NamedPipeChannelOptions { ConnectionTimeout = _connectionTimeout });
         channel.PipeCallback = PipeCallback;
         return new TestService.TestServiceClient(channel);
     }

@@ -25,11 +25,11 @@ internal class WriteTransaction
     private const int PayloadInSeparatePacketThreshold = 15 * 1024; // 15 kiB
 
     private readonly WriteTransactionQueue _txQueue;
-    private readonly ConnectionLogger _logger;
+    private readonly ConnectionLogger<NamedPipeTransport> _logger;
     private readonly MemoryStream _packetBuffer = new();
     private readonly List<byte[]> _trailingPayloads = new();
 
-    public WriteTransaction(WriteTransactionQueue txQueue, ConnectionLogger logger)
+    public WriteTransaction(WriteTransactionQueue txQueue, ConnectionLogger<NamedPipeTransport> logger)
     {
         _txQueue = txQueue;
         _logger = logger;
@@ -80,7 +80,7 @@ internal class WriteTransaction
 
     public WriteTransaction RequestInit(string methodFullName, DateTime? deadline)
     {
-        _logger.Log($"Sending <RequestInit> for '{methodFullName}'");
+        _logger.Trace($"Sending <RequestInit> for '{methodFullName}'");
         return AddMessage(new TransportMessage
         {
             RequestInit = new RequestInit
@@ -115,7 +115,7 @@ internal class WriteTransaction
 
     public WriteTransaction Headers(Metadata headers)
     {
-        _logger.Log($"Sending <Headers>");
+        _logger.Trace($"Sending <Headers>");
         var transportHeaders = new Headers();
         ToTransportMetadata(headers, transportHeaders.Metadata);
         return AddMessage(new TransportMessage
@@ -126,7 +126,7 @@ internal class WriteTransaction
 
     public WriteTransaction Trailers(StatusCode statusCode, string statusDetail, Metadata trailers)
     {
-        _logger.Log($"Sending <Trailers> with status '{statusCode}'");
+        _logger.Trace($"Sending <Trailers> with status '{statusCode}'");
         var transportTrailers = new Trailers
         {
             StatusCode = (int) statusCode,
@@ -141,7 +141,7 @@ internal class WriteTransaction
 
     public WriteTransaction Cancel()
     {
-        _logger.Log("Sending <Cancel>");
+        _logger.Trace("Sending <Cancel>");
         return AddMessage(new TransportMessage
         {
             RequestControl = RequestControl.Cancel
@@ -150,7 +150,7 @@ internal class WriteTransaction
 
     public WriteTransaction RequestStreamEnd()
     {
-        _logger.Log("Sending <StreamEnd>");
+        _logger.Trace("Sending <StreamEnd>");
         return AddMessage(new TransportMessage
         {
             RequestControl = RequestControl.StreamEnd
@@ -159,7 +159,7 @@ internal class WriteTransaction
 
     public WriteTransaction Payload(byte[] payload)
     {
-        _logger.Log($"Sending <PayloadInfo> with {payload.Length} bytes");
+        _logger.Trace($"Sending <PayloadInfo> with {payload.Length} bytes");
         // TODO: Why doesn't this work on Unix?
         if (payload.Length > PayloadInSeparatePacketThreshold &&
             Environment.OSVersion.Platform == PlatformID.Win32NT)

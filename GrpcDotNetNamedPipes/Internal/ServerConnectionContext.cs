@@ -18,17 +18,17 @@ namespace GrpcDotNetNamedPipes.Internal;
 
 internal class ServerConnectionContext : TransportMessageHandler, IDisposable
 {
-    private readonly ConnectionLogger _logger;
+    private readonly ServerLogger<ServerConnectionContext> _logger;
     private readonly Dictionary<string, Func<ServerConnectionContext, Task>> _methodHandlers;
     private readonly PayloadQueue _payloadQueue;
 
-    public ServerConnectionContext(NamedPipeServerStream pipeStream, ConnectionLogger logger,
+    public ServerConnectionContext(NamedPipeServerStream pipeStream, 
         Dictionary<string, Func<ServerConnectionContext, Task>> methodHandlers)
     {
         CallContext = new NamedPipeCallContext(this);
         PipeStream = pipeStream;
-        Transport = new NamedPipeTransport(pipeStream, logger);
-        _logger = logger;
+        Transport = new NamedPipeTransport(pipeStream, TransportSide.Server);
+        _logger = ConnectionLogger<ServerConnectionContext>.Server();
         _methodHandlers = methodHandlers;
         _payloadQueue = new PayloadQueue();
         CancellationTokenSource = new CancellationTokenSource();
@@ -75,18 +75,24 @@ internal class ServerConnectionContext : TransportMessageHandler, IDisposable
 
     public void Error(Exception ex)
     {
-        _logger.Log("RPC error");
         IsCompleted = true;
         if (Deadline != null && Deadline.IsExpired)
         {
+            _logger.Error("RPC Warning: Deadline Exceeded");
             WriteTrailers(StatusCode.DeadlineExceeded, "");
         }
         else if (CancellationTokenSource.IsCancellationRequested)
         {
+            
+            _logger.Error("RPC Warning: Cancelled");
             WriteTrailers(StatusCode.Cancelled, "");
         }
         else if (ex is RpcException rpcException)
         {
+            
+            _logger.Error($"RPC Exception: {rpcException.Message} at {rpcException.StackTrace}");
+            if (rpcException.InnerException != null)
+                _logger.Error($"Inner exception: {rpcException.InnerException.Message} at {rpcException.InnerException.StackTrace}");
             WriteTrailers(rpcException.StatusCode, rpcException.Status.Detail);
         }
         else
@@ -97,7 +103,7 @@ internal class ServerConnectionContext : TransportMessageHandler, IDisposable
 
     public void Success(byte[] responsePayload = null)
     {
-        _logger.Log("RPC successful");
+        _logger.Trace("RPC successful");
         IsCompleted = true;
         if (CallContext.Status.StatusCode != StatusCode.OK)
         {
@@ -123,7 +129,7 @@ internal class ServerConnectionContext : TransportMessageHandler, IDisposable
 
     public void Dispose()
     {
-        _logger.Log("Disposing server context");
+        _logger.Trace("Disposing server context");
         if (!IsCompleted)
         {
             CancellationTokenSource.Cancel();

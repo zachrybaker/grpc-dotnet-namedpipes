@@ -19,19 +19,24 @@ using Google.Protobuf.Collections;
 
 namespace GrpcDotNetNamedPipes.Internal.Protocol;
 
+public enum TransportSide
+{
+    Client,
+    Server,
+}
 internal class NamedPipeTransport
 {
     private const int MessageBufferSize = 16 * 1024; // 16 kiB
 
     private readonly byte[] _messageBuffer = new byte[MessageBufferSize];
     private readonly PipeStream _pipeStream;
-    private readonly ConnectionLogger _logger;
+    private readonly ConnectionLogger<NamedPipeTransport> _logger;
     private readonly WriteTransactionQueue _txQueue;
 
-    public NamedPipeTransport(PipeStream pipeStream, ConnectionLogger logger)
+    public NamedPipeTransport(PipeStream pipeStream, TransportSide transportSide)
     {
         _pipeStream = pipeStream;
-        _logger = logger;
+        _logger = ConnectionLogger<NamedPipeTransport>.Logger(transportSide);
         _txQueue = new WriteTransactionQueue(pipeStream);
     }
 
@@ -102,17 +107,17 @@ internal class NamedPipeTransport
             {
                 case TransportMessage.DataOneofCase.RequestInit:
                     _logger.ConnectionId = message.RequestInit.ConnectionId;
-                    _logger.Log($"Received <RequestInit> for '{message.RequestInit.MethodFullName}'");
+                    _logger.Trace($"Received <RequestInit> for '{message.RequestInit.MethodFullName}'");
                     messageHandler.HandleRequestInit(message.RequestInit.MethodFullName,
                         message.RequestInit.Deadline?.ToDateTime());
                     break;
                 case TransportMessage.DataOneofCase.Headers:
-                    _logger.Log("Received <Headers>");
+                    _logger.Trace("Received <Headers>");
                     var headerMetadata = ConstructMetadata(message.Headers.Metadata);
                     messageHandler.HandleHeaders(headerMetadata);
                     break;
                 case TransportMessage.DataOneofCase.PayloadInfo:
-                    _logger.Log($"Received <PayloadInfo> with {message.PayloadInfo.Size} bytes");
+                    _logger.Trace($"Received <PayloadInfo> with {message.PayloadInfo.Size} bytes");
                     var payload = new byte[message.PayloadInfo.Size];
                     if (message.PayloadInfo.InSamePacket)
                     {
@@ -129,18 +134,18 @@ internal class NamedPipeTransport
                     switch (message.RequestControl)
                     {
                         case RequestControl.Cancel:
-                            _logger.Log("Received <Cancel>");
+                            _logger.Trace("Received <Cancel>");
                             messageHandler.HandleCancel();
                             break;
                         case RequestControl.StreamEnd:
-                            _logger.Log("Received <StreamEnd>");
+                            _logger.Trace("Received <StreamEnd>");
                             messageHandler.HandleStreamEnd();
                             break;
                     }
 
                     break;
                 case TransportMessage.DataOneofCase.Trailers:
-                    _logger.Log($"Received <Trailers> with status '{message.Trailers.StatusCode}'");
+                    _logger.Trace($"Received <Trailers> with status '{message.Trailers.StatusCode}'");
                     var trailerMetadata = ConstructMetadata(message.Trailers.Metadata);
                     var status = new Status((StatusCode) message.Trailers.StatusCode,
                         message.Trailers.StatusDetail);
